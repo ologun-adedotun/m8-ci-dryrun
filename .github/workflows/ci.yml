@@ -1,0 +1,54 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: echo "Robot reporting for duty!"
+      - run: python --version
+      - run: python scripts/hello.py
+      - run: python report.py
+        working-directory: scripts
+      - name: Quality gate - the homepage must say Maright
+        run: grep -q "Maright" website/index.html
+      - name: Use a practice secret
+        env:
+          GREETING: ${{ secrets.PRACTICE_GREETING }}
+        run: echo "The secret greeting is $GREETING"
+      - run: docker build -t maright-site ./website
+      - run: docker build -t maright-app ./app
+
+  publish:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/maright-app
+          tags: type=sha
+      - uses: docker/build-push-action@v7
+        with:
+          context: ./app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
